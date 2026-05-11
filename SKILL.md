@@ -92,6 +92,8 @@ Provide ready-to-use Google search queries:
 
 **CRITICAL**: Steps 1–3 below MUST be executed inside a sub-agent to avoid bloating the main conversation. Use the Agent tool with `general-purpose` subagent_type. Pass ALL collected data (game profile, art breakdown, asset links, image URLs) to the sub-agent via the prompt.
 
+**If the sub-agent fails or hangs**: check `/tmp/game-art-publish-status.json` for progress, and `/tmp/game-art-report.json` for the generated report. If the report JSON exists, re-run only the publish script (see section 4.5 below).
+
 **Sub-agent prompt template**:
 
 ```
@@ -155,7 +157,24 @@ Steps:
 
 CRITICAL: Output valid JSON. Validate brackets and commas before writing.
 Do NOT output raw JSON to stdout. Save to file, run publish script, return only the URL.
+
+Recovery: if the publish script fails or the agent crashes, the JSON report is already saved at /tmp/game-art-report.json. Re-run only the publish step:
+  python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
+
+Check publish status at any time: cat /tmp/game-art-publish-status.json
 ```
+
+### 4.5 Sub-Agent Failure Recovery
+
+If the sub-agent does not return within 3 minutes, or returns an error:
+
+1. Check status: `cat /tmp/game-art-publish-status.json` — shows which stage the publish reached
+2. Check JSON: `python3 -c "import json; d=json.load(open('/tmp/game-art-report.json')); print(f'Blocks: {len(d.get(\"blocks\",[]))}')"` — verify report was generated
+3. If JSON exists but publish failed: re-run publish manually:
+   ```
+   python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
+   ```
+4. If JSON doesn't exist: the sub-agent failed during generation. Re-run the entire sub-agent.
 
 The sub-agent handles all JSON generation, file writing, and the publish script. The main conversation only receives the final Feishu URL.
 
