@@ -93,16 +93,24 @@ def main():
     doc_id = client.create_document(title)
     log.info("Created document: %s", doc_id)
 
-    # Download images
+    # Download images in parallel
     img_data_map = {}
-    for idx, src_url in image_map.items():
-        try:
-            resp = requests.get(src_url, timeout=15)
-            resp.raise_for_status()
-            img_data_map[idx] = resp.content
-            log.info("Downloaded image [%d]: %d bytes", idx, len(resp.content))
-        except Exception as e:
-            log.warning("Failed to download image [%s]: %s", src_url, e)
+    if image_map:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {
+                pool.submit(requests.get, url, timeout=15): idx
+                for idx, url in image_map.items()
+            }
+            for f in as_completed(futures):
+                idx = futures[f]
+                try:
+                    resp = f.result()
+                    resp.raise_for_status()
+                    img_data_map[idx] = resp.content
+                    log.info("Downloaded image [%d]: %d bytes", idx, len(resp.content))
+                except Exception as e:
+                    log.warning("Failed to download image [%s]: %s", image_map[idx], e)
 
     # Write blocks
     client.create_blocks(doc_id, blocks, img_data_map)

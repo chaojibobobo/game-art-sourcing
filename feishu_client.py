@@ -155,7 +155,8 @@ class FeishuClient:
                       image_map: dict[int, bytes] | None = None) -> None:
         """将 Block 列表写入文档，处理图片上传。
 
-        按顺序处理 blocks：非图片块批量写入（最多 50 个一组），遇到图片块时单独处理。
+        非图片块按顺序批量写入。图片块先创建空块拿到 block_id，
+        再并行上传素材 + patch，减少总耗时。
 
         Args:
             doc_id: 文档 ID
@@ -166,10 +167,9 @@ class FeishuClient:
             image_map = {}
 
         image_indices = set(image_map.keys())
-        batch = []  # 收集非图片块用于批量写入
+        batch = []
 
         def flush_batch():
-            """批量写入当前收集的非图片块"""
             if not batch:
                 return
             for start in range(0, len(batch), 50):
@@ -177,19 +177,33 @@ class FeishuClient:
                 self._append_blocks(doc_id, chunk)
             batch.clear()
 
+        # Phase 1: write text blocks in order, create empty image blocks
+        image_block_ids: dict[int, str] = {}
         for i, block in enumerate(blocks):
             if i in image_indices:
                 flush_batch()
-                try:
-                    self._create_and_fill_image(doc_id, image_map[i])
-                except Exception as e:
-                    logger.warning("图片处理失败 (block %d): %s", i, e)
+                bid = self._append_single_block(doc_id, {"block_type": 27, "image": {}})
+                if bid:
+                    image_block_ids[i] = bid
+                time.sleep(0.35)
             else:
                 batch.append(block)
-
         flush_batch()
 
-        # 校验：确保文档有实际内容
+        # Phase 2: upload media + patch in parallel
+        if image_block_ids:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {}
+                for idx, bid in image_block_ids.items():
+                    futures[pool.submit(self._fill_image, doc_id, bid, image_map[idx])] = idx
+                for f in as_completed(futures):
+                    idx = futures[f]
+                    try:
+                        f.result()
+                    except Exception as e:
+                        logger.warning("图片并行处理失败 (block %d): %s", idx, e)
+
         self._verify_document_content(doc_id, len(blocks), image_indices)
 
     def _verify_document_content(self, doc_id: str, total_blocks: int,
@@ -256,29 +270,21 @@ class FeishuClient:
         return None
 
     def _create_and_fill_image(self, doc_id: str, img_data: bytes) -> str | None:
-        """3 步插入图片：创建空图片块 → 上传素材 → patch 替换"""
-        # Step 1: 创建空图片块 (block_type=27 = 图片 Block)
+        """Legacy serial path: create empty block → upload → patch."""
         empty_img_block = {"block_type": 27, "image": {}}
         img_block_id = self._append_single_block(doc_id, empty_img_block)
         if not img_block_id:
             logger.warning("创建空图片块失败，跳过此图片")
             return None
-
-        # 频控：每秒 3 次上限
         time.sleep(0.35)
+        self._fill_image(doc_id, img_block_id, img_data)
+        return img_block_id
 
-        # Step 2: 上传图片素材 (parent_node 必须传 img_block_id，且必须有 size 参数)
-        file_token = self._upload_media(img_data, img_block_id, "docx_image")
-        if not file_token:
-            logger.warning("上传图片素材失败，跳过")
-            return None
-
-        # 频控
-        time.sleep(0.35)
-
-        # Step 3: patch 替换图片块的素材
+    def _fill_image(self, doc_id: str, block_id: str, img_data: bytes) -> None:
+        """Upload media + patch into an existing empty image block."""
+        file_token = self._upload_media(img_data, block_id, "docx_image")
         resp = requests.patch(
-            f"{self.BASE_URL}/docx/v1/documents/{doc_id}/blocks/{img_block_id}",
+            f"{self.BASE_URL}/docx/v1/documents/{doc_id}/blocks/{block_id}",
             headers={**self._headers, "Content-Type": "application/json"},
             json={"replace_image": {"token": file_token}},
             timeout=15,
@@ -286,11 +292,8 @@ class FeishuClient:
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
-            logger.warning("设置图片素材失败: %s", data.get("msg"))
-            return None
-
-        logger.debug("图片插入成功: %s", img_block_id)
-        return img_block_id
+            raise RuntimeError(f"设置图片素材失败: {data.get('msg')}")
+        logger.debug("图片填充成功: %s", block_id)
 
     def _upload_media(self, file_data: bytes, parent_node: str,
                       parent_type: str = "docx_image",
