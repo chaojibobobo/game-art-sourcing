@@ -15,23 +15,24 @@ Claude Code Skill — 游戏美术风格深度调研，自动生成结构化报�
 
 ## 安装
 
-### 1. 安装为 Claude Code Skill
-
-将 `SKILL.md` 和 `scripts/` 复制到你的 Claude Code skills 目录：
+### 1. 一键安装
 
 ```bash
-# 方式 A：直接复制
-cp -r . ~/.claude/skills/game-art-sourcing/
-
-# 方式 B：创建符号链接（推荐，方便 git pull 更新）
-ln -s $(pwd) ~/.claude/skills/game-art-sourcing
+git clone https://github.com/chaojibobobo/game-art-sourcing.git ~/.claude/skills/game-art-sourcing
+cd ~/.claude/skills/game-art-sourcing
+cp config.example.yaml config.yaml
 ```
 
 ### 2. 配置飞书凭证
 
-```bash
-cp config.example.yaml config.yaml
-# 编辑 config.yaml，填入你的飞书应用凭证
+编辑 `config.yaml`，填入你的飞书应用凭证：
+
+```yaml
+feishu:
+  app_id: "your_app_id"
+  app_secret: "your_app_secret"
+  folder_token: ""
+  user_open_id: "your_user_open_id"
 ```
 
 飞书应用需要以下权限：
