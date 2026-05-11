@@ -1,0 +1,5 @@
+feishu:
+  app_id: "your_app_id"
+  app_secret: "your_app_secret"
+  folder_token: ""  # 留空则文档创建在应用默认空间
+  user_open_id: "your_user_open_id"
