@@ -90,11 +90,13 @@ Save all research data to cache:
 python3 ~/.claude/skills/game-art-sourcing/cache_manager.py write "Game Name" /tmp/game-art-research-data.json
 ```
 
-### Step 4: Generate JSON Report — Sub-Agent
+### Step 4: Generate JSON Report — Background Sub-Agent + Progress Monitor
 
 Output: `[5/6] 正在生成 JSON 报告...`
 
-**CRITICAL**: This step MUST execute inside a sub-agent to avoid bloating the main conversation. Use the Agent tool with `general-purpose` subagent_type. Pass ALL collected data (game profile, videos, art breakdown, asset links, image URLs) to the sub-agent via the prompt.
+This step runs the sub-agent **in the background** and monitors progress in real-time.
+
+**Sub-agent execution**: Use the Agent tool with `run_in_background: true`. Pass ALL collected data to the sub-agent.
 
 **Sub-agent prompt template**:
 
@@ -142,6 +144,19 @@ IMPORTANT rules:
 10. **Asset links** → complete absolute URLs, never truncated
 11. **Autonomous execution** → never ask for confirmation. Skip 404/403 silently.
 
+**PROGRESS TRACKING** — You MUST write progress after completing each section:
+```bash
+echo '{"section":"游戏画像","done":1,"total":7}' > /tmp/game-art-gen-progress.json
+```
+Sections to track (in order):
+1. 游戏画像
+2. 游戏视频
+3. 美术风格拆解 - 角色
+4. 美术风格拆解 - 场景
+5. 美术风格拆解 - UI
+6. 资产链接 + 扩展视觉素材集
+7. AI Prompt + 离线资产汇总
+
 Report sections (in order):
 - heading 2: 🎮 游戏画像 — profile info (text blocks) + 1 cover image + gallery block with all store screenshots + Chinese translated tags
 - heading 2: 📺 游戏视频 — 3-5 Bilibili video links as bullet blocks with link elements. Example:
@@ -164,15 +179,46 @@ Report sections (in order):
 - heading 2: 🎨 AI 生成参考 Prompt — code blocks with English prompts
 - heading 2: 📋 离线资产路径汇总 — text blocks with pipe-delimited lines + link elements
 
-Step:
-1. Write the full JSON report to /tmp/game-art-report.json
-2. Return ONLY: "JSON report written to /tmp/game-art-report.json with N blocks and M images"
+Steps:
+1. Clear progress: `echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-gen-progress.json`
+2. Generate the full JSON report, writing progress after EACH section
+3. Write the final JSON to /tmp/game-art-report.json
+4. Return ONLY: "JSON report written to /tmp/game-art-report.json with N blocks and M images"
 
 CRITICAL: Output valid JSON. Validate brackets and commas before writing.
 Do NOT output raw JSON to stdout. Save to file, return the summary line only.
 ```
 
-After sub-agent returns, output: `[5/6] 报告生成完毕：N blocks, M images`
+**Progress monitor**: While the sub-agent runs in background, run this bash monitoring loop in the main conversation:
+
+```bash
+echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-gen-progress.json
+```
+
+(Spawn the background sub-agent, then immediately run:)
+
+```bash
+LAST_SEC=""; LAST_DONE=0; ELAPSED=0; START=$(date +%s)
+while [ ! -s /tmp/game-art-report.json ]; do
+  PROG=$(cat /tmp/game-art-gen-progress.json 2>/dev/null || echo '{}')
+  SEC=$(echo "$PROG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('section',''))" 2>/dev/null)
+  DONE=$(echo "$PROG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('done',0))" 2>/dev/null)
+  NOW=$(date +%s); ELAPSED=$(( NOW - START ))
+  if [ "$SEC" != "$LAST_SEC" ] || [ "$DONE" != "$LAST_DONE" ]; then
+    echo "  → [$DONE/7] $SEC ... ($((ELAPSED))s)"
+    LAST_SEC="$SEC"; LAST_DONE="$DONE"
+  fi
+  if [ $ELAPSED -gt 300 ] && [ $((ELAPSED % 60)) -eq 0 ]; then
+    echo "  ⚠️ 已运行 $((ELAPSED/60)) 分钟，仍在生成 $SEC ..."
+  fi
+  sleep 8
+done
+echo "  → 报告生成完毕 (总耗时 $((ELAPSED))s)"
+```
+
+This loop outputs real-time progress to the user. If generation takes over 5 minutes, it prints a warning every 60 seconds.
+
+After the loop exits, read the sub-agent result and output: `[5/6] 报告生成完毕：N blocks, M images`
 
 ### Step 5: Publish to Feishu — 主代理
 
