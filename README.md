@@ -2,7 +2,7 @@
 
 Claude Code Skill — 游戏美术风格深度调研，自动生成结构化报告并发布到飞书云文档。
 
-输入一个游戏名，自动完成：信息检索 → 美术分析（角色/场景/UI） → HTML 报告生成 → 飞书文档发布。终端只输出一个飞书 URL。
+输入一个游戏名，自动完成：信息检索 → 美术分析（角色/场景/UI） → JSON 报告生成 → 飞书文档发布。终端只输出一个飞书 URL。
 
 ## 功能
 
@@ -11,7 +11,8 @@ Claude Code Skill — 游戏美术风格深度调研，自动生成结构化报�
 - **资产链接**：官方 Press Kit、ArtStation、Sketchfab、Fandom Wiki 等资源直链
 - **视觉色板**：自动提取 Hex 色值，带 Emoji 色块标注
 - **AI 生成 Prompt**：基于分析自动生成 Midjourney/SD 英文描述词
-- **飞书一键发布**：HTML 转飞书 Block API，图片自动下载上传
+- **飞书一键发布**：JSON 直接转飞书 Block API，图片并行下载上传
+- **搜索缓存**：7 天内重复调研同一游戏，跳过网络请求直接生成报告
 
 ## 安装
 
@@ -43,7 +44,7 @@ feishu:
 ### 3. 安装 Python 依赖
 
 ```bash
-pip install requests beautifulsoup4 PyYAML
+pip install requests PyYAML
 ```
 
 ## 使用
@@ -61,21 +62,41 @@ pip install requests beautifulsoup4 PyYAML
 ## 项目结构
 
 ```
-SKILL.md              ← 技能定义（工作流、排版规范、子代理模板）
-config.example.yaml   ← 飞书凭证示例
-config.yaml           ← 实际凭证（gitignore）
-converter.py          ← HTML → 飞书 Block 格式转换
-feishu_client.py      ← 飞书 Block API 封装
+SKILL.md                ← 技能定义（工作流、排版规范、子代理模板）
+block_builder.py         ← JSON schema → 飞书 Block API 转换器
+cache_manager.py         ← 搜索结果缓存（7 天 TTL）
+feishu_client.py         ← 飞书 Block API 封装（支持并行图片上传）
+converter.py             ← HTML → 飞书 Block（旧模式保留）
+config.example.yaml      ← 飞书凭证示例
 scripts/
-  publish_to_feishu.py ← 发布脚本：转换 → 创建文档 → 上传图片 → 写入
+  publish_to_feishu.py   ← 发布脚本：JSON/HTML → 创建文档 → 并行上传 → 写入
+cache/                   ← 本地缓存目录（gitignore）
 ```
+
+## 缓存管理
+
+```bash
+# 查看所有缓存
+python3 cache_manager.py list
+
+# 清除指定游戏缓存
+python3 cache_manager.py clear "沙石镇时光"
+
+# 清空全部缓存
+python3 cache_manager.py clear --all
+```
+
+缓存有效期 7 天，过期自动重新调研。
 
 ## 技术要点
 
-- **飞书 Block API**：不支持 `<table>` 渲染（block_type 22 不可用），报告使用 pipe-delimited 文本行
-- **图片处理**：3 步流程（创建空块 → 上传 media → patch 替换），每张图独立处理，单张失败不阻塞
+- **JSON 直出**：跳过 HTML 中间层，`block_builder.py` 直接将 JSON schema 转为飞书 Block API 格式
+- **并行图片处理**：`ThreadPoolExecutor` 并行下载（6 线程）和上传（4 线程），图片处理耗时从串行 20s 压缩到 3-5s
+- **飞书 Block API**：不支持 `<table>` 渲染，报告使用 pipe-delimited 文本行
+- **图片处理**：3 步流程（创建空块 → 上传 media → patch 替换），单张失败不阻塞
 - **子代理委托**：报告生成和发布在子代理中执行，防止主对话上下文溢出
 - **自动容错**：图片 404/403 自动跳过，不中断流程
+- **搜索缓存**：URL-safe base64 键名，支持中英文游戏名
 
 ## License
 
