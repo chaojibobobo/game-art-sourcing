@@ -22,9 +22,29 @@ sys.path.insert(0, PROJECT_DIR)
 from feishu_client import FeishuClient  # noqa: E402
 from block_builder import json_to_blocks  # noqa: E402
 import requests  # noqa: E402
+from urllib.parse import urlparse  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("feishu-publish")
+
+# Domains that require Referer/User-Agent to bypass hotlink protection
+_HOTLINK_DOMAINS = {
+    "artstation.com": "https://www.artstation.com",
+    "cdnb.artstation.com": "https://www.artstation.com",
+    "cdna.artstation.com": "https://www.artstation.com",
+}
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+
+
+def _download(url: str, timeout: int = 15) -> requests.Response:
+    """Download with Referer spoofing for hotlink-protected domains."""
+    domain = urlparse(url).hostname or ""
+    headers = {"User-Agent": _UA}
+    for blocked, referer in _HOTLINK_DOMAINS.items():
+        if domain == blocked or domain.endswith("." + blocked):
+            headers["Referer"] = referer
+            break
+    return requests.get(url, timeout=timeout, headers=headers)
 
 CONFIG_PATH = os.path.join(PROJECT_DIR, "config.yaml")
 
@@ -121,7 +141,7 @@ def main():
         downloaded = 0
         with ThreadPoolExecutor(max_workers=6) as pool:
             futures = {
-                pool.submit(requests.get, url, timeout=15): idx
+                pool.submit(_download, url): idx
                 for idx, url in image_map.items()
             }
             for f in as_completed(futures):
