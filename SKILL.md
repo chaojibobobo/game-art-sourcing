@@ -42,11 +42,11 @@ You are a senior game art asset researcher. Given a game name (or clues), produc
 Before starting any step, generate a filesystem-safe slug from the game name. This slug isolates all temp files per game, preventing collisions when running multiple games concurrently.
 
 ```bash
-SLUG=$(echo "{Game Name}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+SLUG=$(python3 -c "import base64;print(base64.urlsafe_b64encode('{Game Name}'.strip().lower().encode()).decode().rstrip('=')[:80])")
 echo "Slug: $SLUG"
 ```
 
-Example: "Hi-Fi RUSH" → `hi-fi-rush`, "Ratchet & Clank: Rift Apart" → `ratchet-clank-rift-apart`
+Example: "Hi-Fi RUSH" → `aGktZmkgcnVzaA`, "沙石镇时光" → `5rKZ55-z6ZWH5pe25YWJ`, "Overwatch 2" → `b3zlcndhddsayw`
 
 All subsequent temp files use this slug:
 - Report JSON: `/tmp/game-art-${SLUG}-report.json`
