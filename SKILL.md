@@ -44,6 +44,15 @@ Search the game on Steam / official sources. Collect:
 - **Steam Tags**: Top 10 core tags from the Steam store page, **全部翻译为中文**，使用国内游戏研发行业标准术语。示例对照：Base Building → 基地建设 · City Builder → 城建 · Resource Management → 资源管理 · Tower Defense → 塔防 · Post-apocalyptic → 后启示录 · Stylized → 风格化 · Farming Sim → 农场模拟 · Crafting → 制作 · Life Sim → 生活模拟 · Sandbox → 沙盒 · Singleplayer → 单人 · Multiplayer → 多人 · RPG → 角色扮演 · Adventure → 冒险 · Casual → 休闲 · Simulation → 模拟 · Action → 动作 · Puzzle → 解谜 · Platformer → 平台跳跃
 - **Visual summary**: 2-3 sentence description of the overall art direction
 
+### 1.5 Game Videos (Bilibili)
+
+Search Bilibili for game introduction/review videos. Collect 3-5 video links:
+
+- **Search**: Use WebSearch with query `site:bilibili.com {game name} 游戏介绍` or `site:bilibili.com {game name} review`
+- For each video, collect: video title, Bilibili URL (format: `https://www.bilibili.com/video/BVxxxxxxx`)
+- Prioritize: official trailers, high-quality reviews, art style analysis videos
+- Pass video data to sub-agent as part of research data
+
 ### 2. Multi-Dimensional Art Breakdown
 
 Split the visual analysis into three tracks:
@@ -108,6 +117,7 @@ Research data:
 - Game profile: {basic info, store URLs, tags, screenshots}
 - Art breakdown: {characters, environments, UI analysis}
 - Asset links: {all sourced links with descriptions}
+- Videos: {list of Bilibili videos with title and URL}
 - Color palette: {extracted hex values with roles}
 
 OUTPUT FORMAT: JSON (NOT HTML). Use the block_builder JSON schema below.
@@ -144,6 +154,17 @@ IMPORTANT rules:
 
 Report sections (in order):
 - heading 2: 🎮 游戏画像 — profile info (text blocks) + 1 cover image + gallery block with all store screenshots + Chinese translated tags
+- heading 2: 📺 游戏视频 — 3-5 Bilibili video links as bullet blocks with link elements. Example:
+  ```json
+  {"type": "heading", "level": 2, "elements": [{"text": "📺 游戏视频"}]},
+  {"type": "quote", "elements": [{"text": "Bilibili 精选视频 — 点击观看游戏实机演示与评测"}]},
+  {"type": "bullet", "elements": [{"text": "【官方预告】游戏名 — 官方中文预告片", "link": "https://www.bilibili.com/video/BVxxxxxxx"}]},
+  {"type": "bullet", "elements": [{"text": "【评测】游戏名 全面评测 — 画面/玩法/美术风格", "link": "https://www.bilibili.com/video/BVyyyyyyy"}]},
+  {"type": "bullet", "elements": [{"text": "【实机演示】游戏名 前 30 分钟实机通关", "link": "https://www.bilibili.com/video/BVzzzzzzz"}]}
+  ```
+  - Each bullet: video title as link text, full Bilibili URL as link
+  - Prioritize: official trailers, high-quality reviews, art-style breakdowns
+  - If no Bilibili results found, output: {"type": "text", "elements": [{"text": "未检索到 Bilibili 相关视频"}]}
 - heading 2: 🎨 美术风格拆解 — HIGH-DENSITY images interleaved with analysis. Maintain used-URL set.
   - heading 3: 👤 角色 — one bullet → 1-3 images → repeat for each aspect
   - heading 3: 🏗️ 场景 — same pattern. End with color palette quote block.
