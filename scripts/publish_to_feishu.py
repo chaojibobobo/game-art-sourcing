@@ -1,26 +1,25 @@
-"""Publish an HTML report to Feishu cloud document.
+"""Publish a report to Feishu cloud document.
+
+Supports two input formats:
+  - JSON (.json): Direct block schema → no HTML parsing, no converter.py needed
+  - HTML (.html): Legacy mode → uses converter.py from wechat2feishu
 
 Usage:
-    python publish_to_feishu.py <html_file> [--title TITLE]
-
-Reads HTML from file, creates a Feishu doc via Block API,
-downloads images, uploads to Feishu, and prints the document URL.
-
-Config: reads config.yaml from the project root (same dir as this script's parent).
+    python publish_to_feishu.py report.json --title "标题"
+    python publish_to_feishu.py report.html --title "标题"
 """
-
 import sys
 import os
+import json
 import argparse
 import yaml
 import logging
 
-# Project root is one level up from scripts/
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
 
 from feishu_client import FeishuClient  # noqa: E402
-from converter import html_to_blocks  # noqa: E402
+from block_builder import json_to_blocks  # noqa: E402
 import requests  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -38,29 +37,52 @@ def load_config():
         return yaml.safe_load(f)["feishu"]
 
 
-def wrap_for_converter(html: str) -> str:
-    """Wrap generic HTML in a js_content div so converter.py processes it."""
+def load_html(input_file: str) -> tuple[list[dict], dict[int, str]]:
+    """Legacy: parse HTML via converter.py."""
+    W2F_DIR = os.path.expanduser("~/studio/tools/wechat2feishu")
+    if W2F_DIR not in sys.path:
+        sys.path.insert(0, W2F_DIR)
+    from converter import html_to_blocks
     import re
+
+    with open(input_file) as f:
+        html = f.read()
     body_match = re.search(r"<body[^>]*>(.*)</body>", html, re.DOTALL | re.IGNORECASE)
     body_content = body_match.group(1) if body_match else html
-    return f'<html><body><div id="js_content">{body_content}</div></body></html>'
+    wrapped = f'<html><body><div id="js_content">{body_content}</div></body></html>'
+    return html_to_blocks(wrapped)
+
+
+def load_json(input_file: str) -> tuple[list[dict], dict[int, str]]:
+    """Load JSON report and convert to blocks."""
+    with open(input_file) as f:
+        data = json.load(f)
+    return json_to_blocks(data)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Publish HTML to Feishu doc")
-    parser.add_argument("html_file", help="HTML file to publish")
-    parser.add_argument("--title", default=None, help="Document title (default: from <title> tag)")
+    parser = argparse.ArgumentParser(description="Publish report to Feishu doc")
+    parser.add_argument("input_file", help="Report file (.json or .html)")
+    parser.add_argument("--title", default=None, help="Document title")
     args = parser.parse_args()
 
-    with open(args.html_file) as f:
-        html = f.read()
+    is_json = args.input_file.endswith(".json")
 
-    title = args.title
-    if not title:
-        import re
-        m = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE)
-        title = m.group(1) if m else "Game Art Research Report"
+    # Load and convert
+    if is_json:
+        blocks, image_map = load_json(args.input_file)
+        title = args.title
+        if not title:
+            with open(args.input_file) as f:
+                data = json.load(f)
+            title = data.get("title", "Game Art Research Report")
+    else:
+        blocks, image_map = load_html(args.input_file)
+        title = args.title or "Game Art Research Report"
 
+    log.info("Converted to %d blocks, %d images", len(blocks), len(image_map))
+
+    # Create document
     cfg = load_config()
     client = FeishuClient(
         app_id=cfg["app_id"],
@@ -68,14 +90,10 @@ def main():
         folder_token=cfg.get("folder_token", ""),
         user_open_id=cfg.get("user_open_id", ""),
     )
-
-    wrapped = wrap_for_converter(html)
-    blocks, image_map = html_to_blocks(wrapped)
-    log.info("Converted to %d blocks, %d images", len(blocks), len(image_map))
-
     doc_id = client.create_document(title)
     log.info("Created document: %s", doc_id)
 
+    # Download images
     img_data_map = {}
     for idx, src_url in image_map.items():
         try:
@@ -86,6 +104,7 @@ def main():
         except Exception as e:
             log.warning("Failed to download image [%s]: %s", src_url, e)
 
+    # Write blocks
     client.create_blocks(doc_id, blocks, img_data_map)
 
     url = client.get_document_url(doc_id)
