@@ -15,12 +15,14 @@ class FeishuClient:
     BASE_URL = "https://open.feishu.cn/open-apis"
 
     def __init__(self, app_id: str, app_secret: str, folder_token: str = "",
-                 user_open_id: str = "", webhook_url: str = ""):
+                 user_open_id: str = "", webhook_url: str = "",
+                 doc_domain: str = "open.feishu.cn"):
         self.app_id = app_id
         self.app_secret = app_secret
         self.folder_token = folder_token
         self.user_open_id = user_open_id
         self.webhook_url = webhook_url
+        self.doc_domain = doc_domain
         self._token = ""
         self._token_expires_at = 0
 
@@ -442,4 +444,4 @@ class FeishuClient:
         return self._build_doc_url(document_id)
 
     def _build_doc_url(self, token: str) -> str:
-        return f"https://TENANT_PLACEHOLDER.feishu.cn/docx/{token}"
+        return f"https://{self.doc_domain}/docx/{token}"

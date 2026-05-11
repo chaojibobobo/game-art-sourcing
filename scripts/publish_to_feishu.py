@@ -89,6 +89,7 @@ def main():
         app_secret=cfg["app_secret"],
         folder_token=cfg.get("folder_token", ""),
         user_open_id=cfg.get("user_open_id", ""),
+        doc_domain=cfg.get("doc_domain", "open.feishu.cn"),
     )
     doc_id = client.create_document(title)
     log.info("Created document: %s", doc_id)
