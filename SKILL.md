@@ -37,6 +37,23 @@ You are a senior game art asset researcher. Given a game name (or clues), produc
 
 **IMPORTANT**: Steps 0-3 are executed by the MAIN AGENT with progress output. Step 4 delegates JSON generation to a sub-agent. Step 5 runs the publish script in the main conversation.
 
+### Pre-Step: Generate Slug — 主代理
+
+Before starting any step, generate a filesystem-safe slug from the game name. This slug isolates all temp files per game, preventing collisions when running multiple games concurrently.
+
+```bash
+SLUG=$(echo "{Game Name}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+echo "Slug: $SLUG"
+```
+
+Example: "Hi-Fi RUSH" → `hi-fi-rush`, "Ratchet & Clank: Rift Apart" → `ratchet-clank-rift-apart`
+
+All subsequent temp files use this slug:
+- Report JSON: `/tmp/game-art-${SLUG}-report.json`
+- Progress JSON: `/tmp/game-art-${SLUG}-gen-progress.json`
+- Publish status: `/tmp/game-art-${SLUG}-publish-status.json`
+- Research data: `/tmp/game-art-${SLUG}-research-data.json`
+
 ### Step 0: Cache Check — 主代理
 
 Output: `[1/6] 正在检查缓存...`
@@ -87,7 +104,7 @@ Output when done: `[4/6] 收集到 N 张参考图、M 个资产链接`
 
 Save all research data to cache:
 ```bash
-python3 ~/.claude/skills/game-art-sourcing/cache_manager.py write "Game Name" /tmp/game-art-research-data.json
+python3 ~/.claude/skills/game-art-sourcing/cache_manager.py write "Game Name" /tmp/game-art-${SLUG}-research-data.json
 ```
 
 ### Step 4: Generate JSON Report — Background Sub-Agent + Progress Monitor
@@ -104,6 +121,7 @@ This step runs the sub-agent **in the background** and monitors progress in real
 You are generating a game art research report as JSON. DO NOT publish — just generate the JSON file.
 
 Game: {game name}
+Slug: {SLUG}
 Data source: {cache hit → "cached (skip WebSearch)" | cache miss → "fresh WebSearch"}
 Research data:
 - Game profile: {basic info, store URLs, tags, screenshots}
@@ -146,7 +164,7 @@ IMPORTANT rules:
 
 **PROGRESS TRACKING** — You MUST write progress after completing each section:
 ```bash
-echo '{"section":"游戏画像","done":1,"total":7}' > /tmp/game-art-gen-progress.json
+echo '{"section":"游戏画像","done":1,"total":7}' > /tmp/game-art-{SLUG}-gen-progress.json
 ```
 Sections to track (in order):
 1. 游戏画像
@@ -180,10 +198,10 @@ Report sections (in order):
 - heading 2: 📋 离线资产路径汇总 — text blocks with pipe-delimited lines + link elements
 
 Steps:
-1. Clear progress: `echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-gen-progress.json`
+1. Clear progress: `echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-{SLUG}-gen-progress.json`
 2. Generate the full JSON report, writing progress after EACH section
-3. Write the final JSON to /tmp/game-art-report.json
-4. Return ONLY: "JSON report written to /tmp/game-art-report.json with N blocks and M images"
+3. Write the final JSON to /tmp/game-art-{SLUG}-report.json
+4. Return ONLY: "JSON report written to /tmp/game-art-{SLUG}-report.json with N blocks and M images"
 
 CRITICAL: Output valid JSON. Validate brackets and commas before writing.
 Do NOT output raw JSON to stdout. Save to file, return the summary line only.
@@ -192,15 +210,15 @@ Do NOT output raw JSON to stdout. Save to file, return the summary line only.
 **Progress monitor**: While the sub-agent runs in background, run this bash monitoring loop in the main conversation:
 
 ```bash
-echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-gen-progress.json
+echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-${SLUG}-gen-progress.json
 ```
 
 (Spawn the background sub-agent, then immediately run:)
 
 ```bash
 LAST_SEC=""; LAST_DONE=0; ELAPSED=0; START=$(date +%s)
-while [ ! -s /tmp/game-art-report.json ]; do
-  PROG=$(cat /tmp/game-art-gen-progress.json 2>/dev/null || echo '{}')
+while [ ! -s /tmp/game-art-${SLUG}-report.json ]; do
+  PROG=$(cat /tmp/game-art-${SLUG}-gen-progress.json 2>/dev/null || echo '{}')
   SEC=$(echo "$PROG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('section',''))" 2>/dev/null)
   DONE=$(echo "$PROG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('done',0))" 2>/dev/null)
   NOW=$(date +%s); ELAPSED=$(( NOW - START ))
@@ -227,7 +245,7 @@ Output: `[6/6] 正在发布到飞书...`
 Run the publish script directly in the main conversation:
 
 ```bash
-python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
+python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-${SLUG}-report.json --title "{Game Name} — 美术调研报告"
 ```
 
 The publish script outputs progress to the terminal, so the user sees real-time status.
@@ -238,13 +256,13 @@ After publish completes, output: `[6/6] https://xxx.feishu.cn/docx/xxx`
 
 If the sub-agent fails, crashes, or hangs:
 
-1. Check if JSON was generated: `ls -la /tmp/game-art-report.json`
+1. Check if JSON was generated: `ls -la /tmp/game-art-${SLUG}-report.json`
 2. If JSON exists: the sub-agent completed generation before crashing. Run the publish script directly in the main conversation:
    ```bash
-   python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
+   python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-${SLUG}-report.json --title "{Game Name} — 美术调研报告"
    ```
 3. If JSON doesn't exist: the sub-agent failed during generation. Re-run the entire sub-agent.
-4. Check publish status: `cat /tmp/game-art-publish-status.json` — shows which stage the publish reached
+4. Check publish status: `cat /tmp/game-art-${SLUG}-publish-status.json` — shows which stage the publish reached
 
 ## Report Structure
 

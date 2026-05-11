@@ -27,12 +27,17 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("feishu-publish")
 
 CONFIG_PATH = os.path.join(PROJECT_DIR, "config.yaml")
-STATUS_FILE = "/tmp/game-art-publish-status.json"
 
 
-def _write_status(stage: str, **kwargs):
+def _get_status_file(input_file: str) -> str:
+    """Derive status file path from input file to avoid concurrent collisions."""
+    base = os.path.splitext(os.path.basename(input_file))[0]
+    return f"/tmp/{base}-publish-status.json"
+
+
+def _write_status(status_file: str, stage: str, **kwargs):
     data = {"stage": stage, "ts": time.time(), **kwargs}
-    with open(STATUS_FILE, "w") as f:
+    with open(status_file, "w") as f:
         json.dump(data, f, ensure_ascii=False)
 
 
@@ -75,8 +80,9 @@ def main():
     args = parser.parse_args()
 
     is_json = args.input_file.endswith(".json")
+    status_file = _get_status_file(args.input_file)
 
-    _write_status("converting", input_file=args.input_file)
+    _write_status(status_file, "converting", input_file=args.input_file)
 
     # Load and convert
     if is_json:
@@ -91,7 +97,7 @@ def main():
         title = args.title or "Game Art Research Report"
 
     log.info("Converted to %d blocks, %d images", len(blocks), len(image_map))
-    _write_status("converted", blocks=len(blocks), images=len(image_map))
+    _write_status(status_file, "converted", blocks=len(blocks), images=len(image_map))
 
     # Create document
     cfg = load_config()
@@ -102,15 +108,15 @@ def main():
         user_open_id=cfg.get("user_open_id", ""),
         doc_domain=cfg.get("doc_domain", "open.feishu.cn"),
     )
-    _write_status("creating_doc", title=title)
+    _write_status(status_file, "creating_doc", title=title)
     doc_id = client.create_document(title)
     log.info("Created document: %s", doc_id)
-    _write_status("doc_created", doc_id=doc_id)
+    _write_status(status_file, "doc_created", doc_id=doc_id)
 
     # Download images in parallel
     img_data_map = {}
     if image_map:
-        _write_status("downloading_images", total=len(image_map))
+        _write_status(status_file, "downloading_images", total=len(image_map))
         from concurrent.futures import ThreadPoolExecutor, as_completed
         downloaded = 0
         with ThreadPoolExecutor(max_workers=6) as pool:
@@ -128,14 +134,14 @@ def main():
                     log.info("Downloaded image [%d]: %d bytes", idx, len(resp.content))
                 except Exception as e:
                     log.warning("Failed to download image [%s]: %s", image_map[idx], e)
-        _write_status("images_downloaded", downloaded=downloaded)
+        _write_status(status_file, "images_downloaded", downloaded=downloaded)
 
     # Write blocks
-    _write_status("writing_blocks", doc_id=doc_id)
+    _write_status(status_file, "writing_blocks", doc_id=doc_id)
     client.create_blocks(doc_id, blocks, img_data_map)
 
     url = client.get_document_url(doc_id)
-    _write_status("done", url=url, doc_id=doc_id)
+    _write_status(status_file, "done", url=url, doc_id=doc_id)
     print(url)
 
 
