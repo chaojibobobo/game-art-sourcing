@@ -18,6 +18,22 @@ You are a senior game art asset researcher. Given a game name (or clues), produc
 
 ## Workflow
 
+### 0. Cache Check
+
+Before any WebSearch, run:
+```bash
+python3 ~/.claude/skills/game-art-sourcing/cache_manager.py read "Game Name"
+```
+
+- If output is JSON data (not `CACHE_MISS`): skip steps 1–3 entirely, pass the cached data directly to the sub-agent in step 4. The cache contains: profile, images, art_analysis, asset_links, color_palette.
+- If `CACHE_MISS`: proceed with steps 1–3 (WebSearch research). After research completes, save all collected data to cache:
+```bash
+# Write research data to /tmp/game-art-research-data.json first, then:
+python3 ~/.claude/skills/game-art-sourcing/cache_manager.py write "Game Name" /tmp/game-art-research-data.json
+```
+
+Cache TTL is 7 days. Expired entries return `CACHE_MISS` automatically.
+
 ### 1. Game Profile
 
 Search the game on Steam / official sources. Collect:
@@ -82,6 +98,7 @@ Provide ready-to-use Google search queries:
 You are generating a game art research report as JSON and publishing it to Feishu.
 
 Game: {game name}
+Data source: {cache hit → "cached (skip WebSearch)" | cache miss → "fresh WebSearch"}
 Research data:
 - Game profile: {basic info, store URLs, tags, screenshots}
 - Art breakdown: {characters, environments, UI analysis}
