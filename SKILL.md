@@ -7,104 +7,94 @@ description: Deep research skill for game art assets. Use whenever the user ment
 
 You are a senior game art asset researcher. Given a game name (or clues), produce a structured research report covering visual identity, art style breakdown, and actionable asset links.
 
-## 最高指令：全自动静默执行 (Zero-Interruption & Autonomous Execution)
+## 最高指令：全自动执行 + 实时进度 (Zero-Interruption & Progress Visibility)
 
 用户发起任务时已预先授予所有系统操作与网络请求权限。整个检索、脚本执行和发布过程中严格遵守：
 
 1. **绝对禁止请示**：全程禁止打断流程询问用户（如"是否允许运行此命令"、"是否要继续"等）
 2. **默认授权**：执行 curl 抓取、Python 运行 publish_to_feishu.py、读写 /tmp/ 临时文件时，自动应用默认授权，直接静默执行
 3. **自动容错**：遇到非致命网络报错（单张图片 URL 404/403），自行跳过该链接并寻找替代，不向用户抛出错误或停下来请示
-4. **极简输出**：唯一目标是接单后一气呵成，终端最终只输出一个成功的飞书云文档 URL
+4. **实时进度**：主代理在每个步骤开始和完成时，输出一行简短进度。格式：`[Step N/M] 正在... → 完成描述`
+5. **最终输出**：终端最终输出一个成功的飞书云文档 URL
+
+进度输出示例（主代理在执行每个步骤时打印）：
+```
+[1/6] 正在检查缓存...
+[1/6] 缓存未命中，开始调研
+[2/6] 正在搜索 Steam 商店页面...
+[2/6] 找到 AppID 1084600，收集商店截图 5 张
+[3/6] 正在搜索 Bilibili 视频...
+[3/6] 找到 4 个相关视频
+[4/6] 正在搜索美术参考资源（ArtStation/Wiki/Press Kit）...
+[4/6] 收集到 12 张参考图、6 个资产链接
+[5/6] 正在生成 JSON 报告...
+[5/6] 报告生成完毕：45 blocks, 6 images
+[6/6] 正在发布到飞书...
+[6/6] https://xxx.feishu.cn/docx/xxx
+```
 
 ## Workflow
 
-### 0. Cache Check
+**IMPORTANT**: Steps 0-3 are executed by the MAIN AGENT with progress output. Step 4 delegates JSON generation to a sub-agent. Step 5 runs the publish script in the main conversation.
 
-Before any WebSearch, run:
+### Step 0: Cache Check — 主代理
+
+Output: `[1/6] 正在检查缓存...`
+
 ```bash
 python3 ~/.claude/skills/game-art-sourcing/cache_manager.py read "Game Name"
 ```
 
-- If output is JSON data (not `CACHE_MISS`): skip steps 1–3 entirely, pass the cached data directly to the sub-agent in step 4. The cache contains: profile, images, art_analysis, asset_links, color_palette.
-- If `CACHE_MISS`: proceed with steps 1–3 (WebSearch research). After research completes, save all collected data to cache:
-```bash
-# Write research data to /tmp/game-art-research-data.json first, then:
-python3 ~/.claude/skills/game-art-sourcing/cache_manager.py write "Game Name" /tmp/game-art-research-data.json
-```
+- If cache hit: output `[1/6] 缓存命中，跳过调研` → skip to Step 4
+- If cache miss: output `[1/6] 缓存未命中，开始调研` → continue to Step 1
 
-Cache TTL is 7 days. Expired entries return `CACHE_MISS` automatically.
+### Step 1: Game Profile — 主代理 (WebSearch)
 
-### 1. Game Profile
+Output: `[2/6] 正在搜索 Steam 商店页面...`
 
 Search the game on Steam / official sources. Collect:
 
-- **Basic info**: Developer, release year, art style tags (pixel / low-poly / realistic / stylized / hand-painted etc.)
-- **Store page URLs**: Steam, App Store, Google Play — put them in the game profile table. Not all games are on every platform, just list what exists
-- **Store page images**: Fetch 3-5 screenshots from the Steam store page CDN (pattern: `shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/ss_*.1920x1080.jpg`) and the capsule/header image. Also include the Steam store page cover (capsule_616x353). For mobile games, use App Store / Google Play screenshot URLs instead
-- **Steam Tags**: Top 10 core tags from the Steam store page, **全部翻译为中文**，使用国内游戏研发行业标准术语。示例对照：Base Building → 基地建设 · City Builder → 城建 · Resource Management → 资源管理 · Tower Defense → 塔防 · Post-apocalyptic → 后启示录 · Stylized → 风格化 · Farming Sim → 农场模拟 · Crafting → 制作 · Life Sim → 生活模拟 · Sandbox → 沙盒 · Singleplayer → 单人 · Multiplayer → 多人 · RPG → 角色扮演 · Adventure → 冒险 · Casual → 休闲 · Simulation → 模拟 · Action → 动作 · Puzzle → 解谜 · Platformer → 平台跳跃
-- **Visual summary**: 2-3 sentence description of the overall art direction
+- **Basic info**: Developer, release year, art style tags
+- **Store page URLs**: Steam, App Store, Google Play
+- **Store page images**: 3-5 screenshots from Steam CDN + header image
+- **Steam Tags**: Top 10, **全部中文翻译**
+- **Visual summary**: 2-3 sentence art direction description
 
-### 1.5 Game Videos (Bilibili)
+Output when done: `[2/6] 找到 AppID xxx，收集商店截图 N 张`
 
-Search Bilibili for game introduction/review videos. Collect 3-5 video links:
+### Step 2: Game Videos — 主代理 (WebSearch)
 
-- **Search**: Use WebSearch with query `site:bilibili.com {game name} 游戏介绍` or `site:bilibili.com {game name} review`
-- For each video, collect: video title, Bilibili URL (format: `https://www.bilibili.com/video/BVxxxxxxx`)
-- Prioritize: official trailers, high-quality reviews, art style analysis videos
-- Pass video data to sub-agent as part of research data
+Output: `[3/6] 正在搜索 Bilibili 视频...`
 
-### 2. Multi-Dimensional Art Breakdown
+Search: `site:bilibili.com {game name} 游戏介绍` or `site:bilibili.com {game name} review`
 
-Split the visual analysis into three tracks:
+Collect 3-5 videos: title + URL (`https://www.bilibili.com/video/BVxxxxxxx`)
 
-**Characters**
-- Body proportions and silhouettes (hero vs NPC differentiation)
-- Material rendering style (flat shading / toon / PBR / painted)
-- Design language: color palette per character archetype, accessory motifs
-- Animation style if notable (frame-by-frame / skeletal / mocap)
+Output when done: `[3/6] 找到 N 个相关视频`
 
-**Environments**
-- Dominant color temperature and palette range
-- Composition approach (layered parallax / 3D perspective / isometric)
-- Prop and tile reuse patterns
-- Lighting model (baked / dynamic / stylized)
+### Step 3: Art Breakdown + Asset Sourcing — 主代理 (WebSearch)
 
-**UI / UX**
-- Layout logic (HUD placement, menu hierarchy)
-- Icon style and grid specification
-- Typography choices (pixel font / themed / clean sans-serif)
-- Interaction patterns that tie into the visual theme
+Output: `[4/6] 正在搜索美术参考资源...`
 
-### 3. Asset Sourcing
+Search ArtStation, Fandom Wiki, Sketchfab, Press Kit for:
+- Character concept art, environment screenshots, UI screenshots
+- Asset links with descriptions
+- Color palette data
 
-Search in this priority order. For each source, verify the link is reachable and describe what it contains.
+See detailed criteria in sections below (Characters, Environments, UI/UX, Asset Sourcing).
 
-**Official Sources**
-- Press Kit / Media Kit (search: `"Game Name" press kit` or check the game's official site footer)
-- Official soundtrack / art book if available
+Output when done: `[4/6] 收集到 N 张参考图、M 个资产链接`
 
-**Community & Extraction Sites**
-- [Spriters Resource](https://www.spriters-resource.com/) — 2D sprites, tiles, UI sheets
-- [Models Resource](https://www.models-resource.com/) — 3D model rips
-- [Sketchfab](https://sketchfab.com) — search `"Game Name" 3D model`
-- [Fandom Wiki](https://www.fandom.com) — image galleries, often full-res character art
-- [ArtStation](https://www.artstation.com) — search for the game title to find artist portfolios
+Save all research data to cache:
+```bash
+python3 ~/.claude/skills/game-art-sourcing/cache_manager.py write "Game Name" /tmp/game-art-research-data.json
+```
 
-**Advanced Search Patterns**
-Provide ready-to-use Google search queries:
-- `"Game Name" UI sprite sheet filetype:png`
-- `"Game Name" concept art high resolution`
-- `"Game Name" texture rip site:reddit.com OR site:gamedev.stackexchange.com`
-- `"Game Name" press kit site:official site domain`
+### Step 4: Generate JSON Report — Sub-Agent
 
-### 4. Output to Feishu (via Sub-Agent + Main Agent Publish)
+Output: `[5/6] 正在生成 JSON 报告...`
 
-The workflow is split into two phases:
-
-**Phase A — Sub-Agent**: generates JSON report (heavy text work, avoid bloating main context)
-**Phase B — Main Agent**: runs publish script (so user sees real-time progress in Claude Code)
-
-**CRITICAL**: Phase A MUST execute inside a sub-agent. Use the Agent tool with `general-purpose` subagent_type. Pass ALL collected data (game profile, art breakdown, asset links, image URLs) to the sub-agent via the prompt.
+**CRITICAL**: This step MUST execute inside a sub-agent to avoid bloating the main conversation. Use the Agent tool with `general-purpose` subagent_type. Pass ALL collected data (game profile, videos, art breakdown, asset links, image URLs) to the sub-agent via the prompt.
 
 **Sub-agent prompt template**:
 
@@ -182,15 +172,23 @@ CRITICAL: Output valid JSON. Validate brackets and commas before writing.
 Do NOT output raw JSON to stdout. Save to file, return the summary line only.
 ```
 
-**Phase B — Main Agent**: after the sub-agent returns, run the publish script directly in the main conversation:
+After sub-agent returns, output: `[5/6] 报告生成完毕：N blocks, M images`
+
+### Step 5: Publish to Feishu — 主代理
+
+Output: `[6/6] 正在发布到飞书...`
+
+Run the publish script directly in the main conversation:
 
 ```bash
 python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
 ```
 
-The publish script outputs progress to the terminal, so the user sees real-time status. Return the Feishu URL to the user.
+The publish script outputs progress to the terminal, so the user sees real-time status.
 
-### 4.5 Sub-Agent Failure Recovery
+After publish completes, output: `[6/6] https://xxx.feishu.cn/docx/xxx`
+
+### Sub-Agent Failure Recovery
 
 If the sub-agent fails, crashes, or hangs:
 
