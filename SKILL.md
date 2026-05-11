@@ -88,16 +88,19 @@ Provide ready-to-use Google search queries:
 - `"Game Name" texture rip site:reddit.com OR site:gamedev.stackexchange.com`
 - `"Game Name" press kit site:official site domain`
 
-### 4. Output to Feishu (via Sub-Agent)
+### 4. Output to Feishu (via Sub-Agent + Main Agent Publish)
 
-**CRITICAL**: Steps 1–3 below MUST be executed inside a sub-agent to avoid bloating the main conversation. Use the Agent tool with `general-purpose` subagent_type. Pass ALL collected data (game profile, art breakdown, asset links, image URLs) to the sub-agent via the prompt.
+The workflow is split into two phases:
 
-**If the sub-agent fails or hangs**: check `/tmp/game-art-publish-status.json` for progress, and `/tmp/game-art-report.json` for the generated report. If the report JSON exists, re-run only the publish script (see section 4.5 below).
+**Phase A — Sub-Agent**: generates JSON report (heavy text work, avoid bloating main context)
+**Phase B — Main Agent**: runs publish script (so user sees real-time progress in Claude Code)
+
+**CRITICAL**: Phase A MUST execute inside a sub-agent. Use the Agent tool with `general-purpose` subagent_type. Pass ALL collected data (game profile, art breakdown, asset links, image URLs) to the sub-agent via the prompt.
 
 **Sub-agent prompt template**:
 
 ```
-You are generating a game art research report as JSON and publishing it to Feishu.
+You are generating a game art research report as JSON. DO NOT publish — just generate the JSON file.
 
 Game: {game name}
 Data source: {cache hit → "cached (skip WebSearch)" | cache miss → "fresh WebSearch"}
@@ -137,7 +140,7 @@ IMPORTANT rules:
 8. **Image dedup** → maintain a used-URL set. Each URL at most once in entire report
 9. **扩展视觉素材集 dedup** → only images NOT used in 美术风格拆解. If none, output a text block: "未检索到更多不重复的高质量素材"
 10. **Asset links** → complete absolute URLs, never truncated
-11. **Autonomous execution** → never ask for confirmation. Skip 404/403 silently. Return only Feishu URL
+11. **Autonomous execution** → never ask for confirmation. Skip 404/403 silently.
 
 Report sections (in order):
 - heading 2: 🎮 游戏画像 — profile info (text blocks) + 1 cover image + gallery block with all store screenshots + Chinese translated tags
@@ -150,33 +153,33 @@ Report sections (in order):
 - heading 2: 🎨 AI 生成参考 Prompt — code blocks with English prompts
 - heading 2: 📋 离线资产路径汇总 — text blocks with pipe-delimited lines + link elements
 
-Steps:
+Step:
 1. Write the full JSON report to /tmp/game-art-report.json
-2. Run: python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
-3. Return ONLY the Feishu document URL (or error message if it fails)
+2. Return ONLY: "JSON report written to /tmp/game-art-report.json with N blocks and M images"
 
 CRITICAL: Output valid JSON. Validate brackets and commas before writing.
-Do NOT output raw JSON to stdout. Save to file, run publish script, return only the URL.
-
-Recovery: if the publish script fails or the agent crashes, the JSON report is already saved at /tmp/game-art-report.json. Re-run only the publish step:
-  python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
-
-Check publish status at any time: cat /tmp/game-art-publish-status.json
+Do NOT output raw JSON to stdout. Save to file, return the summary line only.
 ```
+
+**Phase B — Main Agent**: after the sub-agent returns, run the publish script directly in the main conversation:
+
+```bash
+python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
+```
+
+The publish script outputs progress to the terminal, so the user sees real-time status. Return the Feishu URL to the user.
 
 ### 4.5 Sub-Agent Failure Recovery
 
-If the sub-agent does not return within 3 minutes, or returns an error:
+If the sub-agent fails, crashes, or hangs:
 
-1. Check status: `cat /tmp/game-art-publish-status.json` — shows which stage the publish reached
-2. Check JSON: `python3 -c "import json; d=json.load(open('/tmp/game-art-report.json')); print(f'Blocks: {len(d.get(\"blocks\",[]))}')"` — verify report was generated
-3. If JSON exists but publish failed: re-run publish manually:
-   ```
+1. Check if JSON was generated: `ls -la /tmp/game-art-report.json`
+2. If JSON exists: the sub-agent completed generation before crashing. Run the publish script directly in the main conversation:
+   ```bash
    python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py /tmp/game-art-report.json --title "{Game Name} — 美术调研报告"
    ```
-4. If JSON doesn't exist: the sub-agent failed during generation. Re-run the entire sub-agent.
-
-The sub-agent handles all JSON generation, file writing, and the publish script. The main conversation only receives the final Feishu URL.
+3. If JSON doesn't exist: the sub-agent failed during generation. Re-run the entire sub-agent.
+4. Check publish status: `cat /tmp/game-art-publish-status.json` — shows which stage the publish reached
 
 ## Report Structure
 
