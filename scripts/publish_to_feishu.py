@@ -12,6 +12,7 @@ import sys
 import os
 import json
 import argparse
+import time
 import yaml
 import logging
 
@@ -26,6 +27,13 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("feishu-publish")
 
 CONFIG_PATH = os.path.join(PROJECT_DIR, "config.yaml")
+STATUS_FILE = "/tmp/game-art-publish-status.json"
+
+
+def _write_status(stage: str, **kwargs):
+    data = {"stage": stage, "ts": time.time(), **kwargs}
+    with open(STATUS_FILE, "w") as f:
+        json.dump(data, f, ensure_ascii=False)
 
 
 def load_config():
@@ -68,6 +76,8 @@ def main():
 
     is_json = args.input_file.endswith(".json")
 
+    _write_status("converting", input_file=args.input_file)
+
     # Load and convert
     if is_json:
         blocks, image_map = load_json(args.input_file)
@@ -81,6 +91,7 @@ def main():
         title = args.title or "Game Art Research Report"
 
     log.info("Converted to %d blocks, %d images", len(blocks), len(image_map))
+    _write_status("converted", blocks=len(blocks), images=len(image_map))
 
     # Create document
     cfg = load_config()
@@ -91,13 +102,17 @@ def main():
         user_open_id=cfg.get("user_open_id", ""),
         doc_domain=cfg.get("doc_domain", "open.feishu.cn"),
     )
+    _write_status("creating_doc", title=title)
     doc_id = client.create_document(title)
     log.info("Created document: %s", doc_id)
+    _write_status("doc_created", doc_id=doc_id)
 
     # Download images in parallel
     img_data_map = {}
     if image_map:
+        _write_status("downloading_images", total=len(image_map))
         from concurrent.futures import ThreadPoolExecutor, as_completed
+        downloaded = 0
         with ThreadPoolExecutor(max_workers=6) as pool:
             futures = {
                 pool.submit(requests.get, url, timeout=15): idx
@@ -109,14 +124,18 @@ def main():
                     resp = f.result()
                     resp.raise_for_status()
                     img_data_map[idx] = resp.content
+                    downloaded += 1
                     log.info("Downloaded image [%d]: %d bytes", idx, len(resp.content))
                 except Exception as e:
                     log.warning("Failed to download image [%s]: %s", image_map[idx], e)
+        _write_status("images_downloaded", downloaded=downloaded)
 
     # Write blocks
+    _write_status("writing_blocks", doc_id=doc_id)
     client.create_blocks(doc_id, blocks, img_data_map)
 
     url = client.get_document_url(doc_id)
+    _write_status("done", url=url, doc_id=doc_id)
     print(url)
 
 
