@@ -47,6 +47,22 @@ feishu:
 pip install requests PyYAML
 ```
 
+### 4. 减少确认提示（推荐）
+
+技能运行时会执行 Python 脚本，Claude Code 默认会逐个请求确认。项目已内置 `.claude/settings.json` 自动授权常用命令，克隆后无需额外配置。
+
+如需手动配置，将以下内容加入你的 `~/.claude/settings.json`：
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 ~/.claude/skills/game-art-sourcing/*)"
+    ]
+  }
+}
+```
+
 ## 使用
 
 在 Claude Code 中输入：

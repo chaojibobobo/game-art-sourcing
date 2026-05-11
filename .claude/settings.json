@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 ~/.claude/skills/game-art-sourcing/cache_manager.py*)",
+      "Bash(python3 ~/.claude/skills/game-art-sourcing/scripts/publish_to_feishu.py*)",
+      "Bash(python3 -c \"import json*\")",
+      "Bash(cat /tmp/game-art-*)",
+      "Bash(ls /tmp/game-art-*)",
+      "Bash(ls -la /tmp/game-art-*)"
+    ]
+  }
+}
