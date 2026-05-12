@@ -113,6 +113,8 @@ python3 cache_manager.py clear --all
 - **子代理委托**：报告生成和发布在子代理中执行，防止主对话上下文溢出
 - **自动容错**：图片 404/403 自动跳过，不中断流程
 - **搜索缓存**：URL-safe base64 键名，支持中英文游戏名
+- **多开支持**：slug 隔离临时文件，支持同时调研多个游戏
+- **ArtStation 防盗链绕过**：4 层回退策略（covers 路径转换 → CDN 子域名轮换 → 尺寸降级 large/medium/small/4k → 去查询参数），调研阶段通过 web_reader 提取 `og:image` 可访问 URL
 
 ## License
 
