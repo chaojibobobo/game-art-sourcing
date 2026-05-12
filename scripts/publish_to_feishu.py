@@ -37,14 +37,59 @@ _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML
 
 
 def _download(url: str, timeout: int = 15) -> requests.Response:
-    """Download with Referer spoofing for hotlink-protected domains."""
+    """Download with hotlink bypass and ArtStation CDN fallback strategies."""
     domain = urlparse(url).hostname or ""
     headers = {"User-Agent": _UA}
     for blocked, referer in _HOTLINK_DOMAINS.items():
         if domain == blocked or domain.endswith("." + blocked):
             headers["Referer"] = referer
             break
-    return requests.get(url, timeout=timeout, headers=headers)
+
+    resp = requests.get(url, timeout=timeout, headers=headers)
+    if resp.status_code != 403 or "artstation" not in domain:
+        return resp
+
+    # ArtStation CDN 403 — try fallback strategies
+    log.info("ArtStation CDN 403, trying fallbacks for %s", url)
+    parsed = urlparse(url)
+    path = parsed.path
+
+    # Fallback 1: /covers/images/ path (proven accessible for og:image URLs)
+    if "/images/images/" in path:
+        alt = parsed._replace(path=path.replace("/images/images/", "/covers/images/"))
+        log.info("  → covers path: %s", alt.geturl())
+        r = requests.get(alt.geturl(), timeout=timeout, headers=headers)
+        if r.ok:
+            return r
+
+    # Fallback 2: rotate CDN subdomain (cdna → cdnb → cdnc)
+    for src, dst in [("cdna", "cdnb"), ("cdnb", "cdnc"), ("cdnc", "cdna")]:
+        if (parsed.hostname or "").startswith(src + "."):
+            alt = parsed._replace(netloc=parsed.hostname.replace(src, dst, 1))
+            log.info("  → %s subdomain: %s", dst, alt.geturl())
+            r = requests.get(alt.geturl(), timeout=timeout, headers=headers)
+            if r.ok:
+                return r
+            break
+
+    # Fallback 3: smaller size variant (/large/ → /small/)
+    if "/large/" in path:
+        alt = parsed._replace(path=path.replace("/large/", "/small/"))
+        log.info("  → small size: %s", alt.geturl())
+        r = requests.get(alt.geturl(), timeout=timeout, headers=headers)
+        if r.ok:
+            return r
+
+    # Fallback 4: strip query parameters
+    if parsed.query:
+        alt = parsed._replace(query="")
+        log.info("  → no query: %s", alt.geturl())
+        r = requests.get(alt.geturl(), timeout=timeout, headers=headers)
+        if r.ok:
+            return r
+
+    log.warning("All ArtStation fallbacks failed for %s", url)
+    return resp
 
 CONFIG_PATH = os.path.join(PROJECT_DIR, "config.yaml")
 

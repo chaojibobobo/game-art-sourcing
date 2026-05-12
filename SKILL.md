@@ -373,10 +373,25 @@ Color values: 1=pink 2=orange 3=yellow 4=green 5=blue 6=purple 7=gray
 
 Search for direct image URLs on these hosts (they serve hotlinkable images):
 - **Steam CDN** — `store.steampowered.com` screenshots
-- **ArtStation** — artwork images (use the `artstation.com/p/assets/...` direct URLs)
+- **ArtStation** — ⚠️ **requires special handling** (see ArtStation Image Extraction below)
 - **Fandom Wiki** — full-res uploads, usually direct-accessible
 - **Official press kits** — hosted on game domain CDNs
 - If you cannot find a direct URL, use a text block with link instead — do NOT fabricate image URLs
+
+### ArtStation Image Extraction
+
+ArtStation uses aggressive CDN hotlink protection (S3 AccessDenied 403). Direct CDN URLs (`/p/assets/images/images/`) are blocked programmatically. Use this strategy:
+
+1. **During research (Step 3)**: When you find an ArtStation artwork page (e.g. `https://www.artstation.com/artwork/XXXXX`), use `mcp__web_reader__webReader` to fetch the page
+2. **Extract image URLs** from the page's metadata — look for:
+   - `og:image` meta tag → usually points to `/p/assets/covers/images/` path which is **publicly accessible**
+   - `twitter:image` meta tag → same accessible path
+   - Any `<img>` src attributes in the fetched content
+3. **Prefer cover URLs**: URLs matching `/p/assets/covers/images/` are proven downloadable. URLs matching `/p/assets/images/images/` will likely 403
+4. **URL transformation fallback** (handled automatically by publish_to_feishu.py):
+   - The script tries: covers path → CDN subdomain rotation → small size variant → strip query params
+   - But getting the right URL upfront is more reliable
+5. **If web_reader fails**: Use a text block with a link to the ArtStation page instead of an image block — do NOT fabricate CDN URLs
 
 ### AI Prompt 参考
 
