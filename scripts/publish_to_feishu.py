@@ -72,13 +72,15 @@ def _download(url: str, timeout: int = 15) -> requests.Response:
                 return r
             break
 
-    # Fallback 3: smaller size variant (/large/ → /small/)
-    if "/large/" in path:
-        alt = parsed._replace(path=path.replace("/large/", "/small/"))
-        log.info("  → small size: %s", alt.geturl())
-        r = requests.get(alt.geturl(), timeout=timeout, headers=headers)
-        if r.ok:
-            return r
+    # Fallback 3: size downgrade (large → medium → small → 4k)
+    size_fallbacks = ["/medium/", "/small/", "/4k/"]
+    for size in size_fallbacks:
+        if "/large/" in path:
+            alt = parsed._replace(path=path.replace("/large/", size))
+            log.info("  → %s size: %s", size.strip("/"), alt.geturl())
+            r = requests.get(alt.geturl(), timeout=timeout, headers=headers)
+            if r.ok:
+                return r
 
     # Fallback 4: strip query parameters
     if parsed.query:
