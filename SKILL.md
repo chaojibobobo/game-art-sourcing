@@ -135,12 +135,12 @@ OUTPUT FORMAT: JSON (NOT HTML). Use the block_builder JSON schema below.
 JSON block types:
 - {"type": "heading", "level": 2, "elements": [{"text": "🎮 游戏画像"}]}
 - {"type": "text", "elements": [{"text": "维度", "bold": true}, {"text": " | 内容"}]}
-- {"type": "image", "url": "https://...", "caption": "图注（必须含视觉特征分析）"}
+- {"type": "image", "url": "https://...", "caption": "图注（必须含视觉特征分析）", "width": 800, "height": 450}
 - {"type": "bullet", "elements": [{"text": "关键词", "bold": true}, {"text": "：描述"}]}
 - {"type": "ordered", "elements": [{"text": "..."}]}
 - {"type": "quote", "elements": [{"text": "内容"}]}
 - {"type": "code", "text": "code content here"}
-- {"type": "gallery", "urls": ["url1", "url2", "url3"]}   ← 无图注的图片序列（用于商店截图画廊）
+- {"type": "gallery", "urls": ["url1", "url2", "url3"], "width": 600}   ← 无图注的图片序列（用于商店截图画廊），gallery 统一用较小的 width
 
 Element (text run) properties:
 - text (required): string
@@ -274,8 +274,8 @@ The report is generated as JSON using the `block_builder` schema. No HTML, no co
 |---|---|---|
 | `heading` + level 2-9 | 4-11 | Section headings |
 | `text` + elements | 2 | Paragraph with styled runs |
-| `image` + url + caption | 27 + 15 | Image with optional caption quote |
-| `gallery` + urls | 27 × N | Multiple images without captions |
+| `image` + url + caption | 27 + 15 | Image with optional caption quote. Supports `width`, `height`, `align` |
+| `gallery` + urls | 27 × N | Multiple images without captions. Supports `width`, `height` |
 | `bullet` + elements | 12 | Unordered list item |
 | `ordered` + elements | 13 | Ordered list item |
 | `quote` + elements | 15 | Blockquote |
@@ -372,11 +372,45 @@ Color values: 1=pink 2=orange 3=yellow 4=green 5=blue 6=purple 7=gray
 ### Image Sources
 
 Search for direct image URLs on these hosts (they serve hotlinkable images):
-- **Steam CDN** — `store.steampowered.com` screenshots
+- **Steam CDN** — ⚠️ **URL format changed in 2026** (see Steam Screenshot URL Format below)
 - **ArtStation** — ⚠️ **requires special handling** (see ArtStation Image Extraction below)
 - **Fandom Wiki** — full-res uploads, usually direct-accessible
 - **Official press kits** — hosted on game domain CDNs
 - If you cannot find a direct URL, use a text block with link instead — do NOT fabricate image URLs
+
+### Steam Screenshot URL Format (2026)
+
+Steam changed their CDN URL structure. You MUST use the **new format** or images will 404:
+
+```
+# OLD (BROKEN — do NOT use):
+https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{APPID}/ss_{HASH}.jpg
+
+# NEW (correct):
+https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{APPID}/{HASH}/ss_{HASH}.1920x1080.jpg?t={timestamp}
+```
+
+Key differences:
+1. Hash directory segment: `/{HASH}/` added before the filename
+2. Size suffix: `.1920x1080.jpg` instead of `.jpg`
+3. Timestamp query: `?t={unix_timestamp}` (use current timestamp)
+
+**How to get correct URLs**: Fetch the Steam store page and extract screenshot URLs from the JSON data in the page HTML. Look for the `"screenshots"` array which contains `"full"`, `"standard"`, and `"thumbnail"` URLs — all in the correct new format.
+
+**Automatic fix**: The publish script (`publish_to_feishu.py`) includes `_fix_steam_url()` which auto-corrects old-format URLs. But generating correct URLs from the start is more reliable.
+
+### Image Size & Compression
+
+The publish pipeline automatically compresses images before upload:
+- Max width: 1200px (wider images are resized proportionally)
+- Format: JPEG at 85% quality
+- RGBA/P mode images are converted to RGB
+
+You can optionally specify `width` and `height` on image/gallery blocks to control rendering:
+```json
+{"type": "image", "url": "...", "caption": "...", "width": 800, "height": 450}
+{"type": "gallery", "urls": ["..."], "width": 600}
+```
 
 ### ArtStation Image Extraction
 

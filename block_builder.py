@@ -73,19 +73,33 @@ def json_to_blocks(data: dict | str) -> tuple[list[dict], dict[int, str]]:
             url = block_def.get("url", "")
             if not url:
                 continue
+            img_block = {"block_type": 27, "image": {}}
+            if block_def.get("width"):
+                img_block["image"]["width"] = block_def["width"]
+            if block_def.get("height"):
+                img_block["image"]["height"] = block_def["height"]
+            if block_def.get("align"):
+                img_block["image"]["alignment"] = block_def["align"]
             idx = len(blocks)
-            blocks.append({"block_type": 27, "image": {}})
+            blocks.append(img_block)
             image_map[idx] = url
             caption = block_def.get("caption", "")
             if caption:
                 blocks.append(_quote_block(*_build_elements([{"text": caption}])))
 
         elif btype == "gallery":
+            gallery_width = block_def.get("width")
+            gallery_height = block_def.get("height")
             for url in block_def.get("urls", []):
                 if not url:
                     continue
+                img_block = {"block_type": 27, "image": {}}
+                if gallery_width:
+                    img_block["image"]["width"] = gallery_width
+                if gallery_height:
+                    img_block["image"]["height"] = gallery_height
                 idx = len(blocks)
-                blocks.append({"block_type": 27, "image": {}})
+                blocks.append(img_block)
                 image_map[idx] = url
 
         elif btype == "bullet":

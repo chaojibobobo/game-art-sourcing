@@ -15,6 +15,7 @@ import argparse
 import time
 import yaml
 import logging
+import io
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
@@ -36,8 +37,28 @@ _HOTLINK_DOMAINS = {
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 
 
+def _fix_steam_url(url: str) -> str:
+    """Fix old-format Steam screenshot URLs to current CDN format.
+
+    Old: /apps/{id}/ss_{hash}.jpg
+    New: /apps/{id}/{hash}/ss_{hash}.1920x1080.jpg?t={now}
+    """
+    import re as _re
+    m = _re.match(
+        r"(https?://[^/]+/store_item_assets/steam/apps/\d+)/ss_([a-f0-9]+)\.jpg$",
+        url,
+    )
+    if m:
+        prefix, hash_val = m.group(1), m.group(2)
+        fixed = f"{prefix}/{hash_val}/ss_{hash_val}.1920x1080.jpg?t={int(time.time())}"
+        log.info("Steam URL fix: %s → %s", url, fixed)
+        return fixed
+    return url
+
+
 def _download(url: str, timeout: int = 15) -> requests.Response:
-    """Download with hotlink bypass and ArtStation CDN fallback strategies."""
+    """Download with hotlink bypass and CDN fallback strategies."""
+    url = _fix_steam_url(url)
     domain = urlparse(url).hostname or ""
     headers = {"User-Agent": _UA}
     for blocked, referer in _HOTLINK_DOMAINS.items():
@@ -92,6 +113,27 @@ def _download(url: str, timeout: int = 15) -> requests.Response:
 
     log.warning("All ArtStation fallbacks failed for %s", url)
     return resp
+
+
+def _compress_image(data: bytes, max_width: int = 1200, quality: int = 85) -> tuple[bytes, int, int]:
+    """Compress image: resize if wider than max_width, return (bytes, width, height)."""
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(data))
+    w, h = img.size
+
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+    if w > max_width:
+        ratio = max_width / w
+        img = img.resize((max_width, int(h * ratio)), Image.LANCZOS)
+        w, h = img.size
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue(), w, h
+
 
 CONFIG_PATH = os.path.join(PROJECT_DIR, "config.yaml")
 
@@ -182,6 +224,7 @@ def main():
 
     # Download images in parallel
     img_data_map = {}
+    img_size_map = {}  # {block_index: (width, height)}
     if image_map:
         _write_status(status_file, "downloading_images", total=len(image_map))
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -196,12 +239,27 @@ def main():
                 try:
                     resp = f.result()
                     resp.raise_for_status()
-                    img_data_map[idx] = resp.content
+                    raw = resp.content
+                    try:
+                        compressed, w, h = _compress_image(raw)
+                        img_data_map[idx] = compressed
+                        img_size_map[idx] = (w, h)
+                        log.info("Downloaded+compressed [%d]: %d→%d bytes (%dx%d)",
+                                 idx, len(raw), len(compressed), w, h)
+                    except Exception as ce:
+                        img_data_map[idx] = raw
+                        log.info("Downloaded [%d]: %d bytes (compress skipped: %s)",
+                                 idx, len(raw), ce)
                     downloaded += 1
-                    log.info("Downloaded image [%d]: %d bytes", idx, len(resp.content))
                 except Exception as e:
                     log.warning("Failed to download image [%s]: %s", image_map[idx], e)
         _write_status(status_file, "images_downloaded", downloaded=downloaded)
+
+    # Patch image blocks with width/height from actual downloads
+    for idx, (w, h) in img_size_map.items():
+        if idx < len(blocks) and blocks[idx].get("block_type") == 27:
+            blocks[idx]["image"]["width"] = w
+            blocks[idx]["image"]["height"] = h
 
     # Write blocks
     _write_status(status_file, "writing_blocks", doc_id=doc_id)
