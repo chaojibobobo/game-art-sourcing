@@ -164,7 +164,7 @@ IMPORTANT rules:
 
 **PROGRESS TRACKING** — You MUST write progress after completing each section:
 ```bash
-echo '{"section":"游戏画像","done":1,"total":7}' > /tmp/game-art-{SLUG}-gen-progress.json
+echo '{"section":"游戏画像","done":1,"total":8}' > /tmp/game-art-{SLUG}-gen-progress.json
 ```
 Sections to track (in order):
 1. 游戏画像
@@ -172,8 +172,9 @@ Sections to track (in order):
 3. 美术风格拆解 - 角色
 4. 美术风格拆解 - 场景
 5. 美术风格拆解 - UI
-6. 资产链接 + 扩展视觉素材集
-7. AI Prompt + 离线资产汇总
+6. 美术技法分析
+7. 资产链接 + 扩展视觉素材集
+8. AI Prompt + 离线资产汇总
 
 Report sections (in order):
 - heading 2: 🎮 游戏画像 — profile info (text blocks) + 1 cover image + gallery block with all store screenshots + Chinese translated tags
@@ -192,13 +193,18 @@ Report sections (in order):
   - heading 3: 👤 角色 — one bullet → 1-3 images → repeat for each aspect
   - heading 3: 🏗️ 场景 — same pattern. End with color palette quote block.
   - heading 3: 🖥️ UI / UX — same pattern
+- heading 2: 🛠️ 美术技法分析 — technical rendering analysis (see 美术技法知识框架 for reference). Sub-sections:
+  - heading 3: 🎯 渲染管线 — PBR/NPR 判断及子类（Cel Shading / 水彩 / 像素 / 扁平等），附证据截图
+  - heading 3: 🎨 绘画与材质技法 — 2D 涂法（平涂/厚涂/半厚涂）+ 3D 贴图技术（法线贴图/手绘贴图/PBR材质流/顶点色等）
+  - heading 3: ✨ 后处理与特效 — Bloom/Color Grading/Outline/SSAO/DOF/Volumetric Light 等识别，附截图对照
+  - heading 3: 📊 技法总结 — 一句话概括该游戏的核心技术组合（用 quote block）
 - heading 2: 🔗 资产链接 — bullet blocks with link elements
 - heading 2: 🎨 扩展视觉素材集 — only unused images. If none, text: "未检索到更多不重复的高质量素材"
 - heading 2: 🎨 AI 生成参考 Prompt — code blocks with English prompts
 - heading 2: 📋 离线资产路径汇总 — text blocks with pipe-delimited lines + link elements
 
 Steps:
-1. Clear progress: `echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-{SLUG}-gen-progress.json`
+1. Clear progress: `echo '{"section":"starting","done":0,"total":8}' > /tmp/game-art-{SLUG}-gen-progress.json`
 2. Generate the full JSON report, writing progress after EACH section
 3. Write the final JSON to /tmp/game-art-{SLUG}-report.json
 4. Return ONLY: "JSON report written to /tmp/game-art-{SLUG}-report.json with N blocks and M images"
@@ -210,7 +216,7 @@ Do NOT output raw JSON to stdout. Save to file, return the summary line only.
 **Progress monitor**: While the sub-agent runs in background, run this bash monitoring loop in the main conversation:
 
 ```bash
-echo '{"section":"starting","done":0,"total":7}' > /tmp/game-art-${SLUG}-gen-progress.json
+echo '{"section":"starting","done":0,"total":8}' > /tmp/game-art-${SLUG}-gen-progress.json
 ```
 
 (Spawn the background sub-agent, then immediately run:)
@@ -223,7 +229,7 @@ while [ ! -s /tmp/game-art-${SLUG}-report.json ]; do
   DONE=$(echo "$PROG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('done',0))" 2>/dev/null)
   NOW=$(date +%s); ELAPSED=$(( NOW - START ))
   if [ "$SEC" != "$LAST_SEC" ] || [ "$DONE" != "$LAST_DONE" ]; then
-    echo "  → [$DONE/7] $SEC ... ($((ELAPSED))s)"
+    echo "  → [$DONE/8] $SEC ... ($((ELAPSED))s)"
     LAST_SEC="$SEC"; LAST_DONE="$DONE"
   fi
   if [ $ELAPSED -gt 300 ] && [ $((ELAPSED % 60)) -eq 0 ]; then
@@ -324,6 +330,32 @@ Color values: 1=pink 2=orange 3=yellow 4=green 5=blue 6=purple 7=gray
     {"text": "点缀", "bold": true}, {"text": "：🟢 "}, {"text": "#4A7023", "inline_code": true}, {"text": " (仙人掌绿) · 🟠 "}, {"text": "#FF8C00", "inline_code": true}, {"text": " (落日橙)"}
   ]}
   ```
+
+- **heading 2: 🛠️ 美术技法分析** — 基于截图从技术角度推断渲染管线、材质技法和后处理手段。参照「美术技法知识框架」的维度进行分析。
+  ```json
+  {"type": "heading", "level": 2, "elements": [{"text": "🛠️ 美术技法分析"}]},
+  {"type": "quote", "elements": [{"text": "本节从技术角度分析该游戏使用的渲染管线、材质技法和后处理手段"}]},
+  {"type": "heading", "level": 3, "elements": [{"text": "🎯 渲染管线"}]},
+  {"type": "bullet", "elements": [{"text": "管线类型", "bold": true}, {"text": "：PBR（写实物理渲染）/ NPR（非真实感渲染）"}]},
+  {"type": "bullet", "elements": [{"text": "NPR 子类", "bold": true}, {"text": "：Cel Shading / 水彩风 / 厚涂风 / 像素风 / 扁平矢量 / 线描墨线"}]},
+  {"type": "bullet", "elements": [{"text": "判断依据", "bold": true}, {"text": "：（描述从截图中观察到的具体视觉特征，如\"明暗交界处有清晰的色阶分界线，疑似使用 3 级 Toon Shading\"）"}]},
+  {"type": "image", "url": "https://...", "caption": "角色特写 — 明暗交界线清晰可见硬分界，典型 Cel Shading 色阶量化特征"},
+  {"type": "heading", "level": 3, "elements": [{"text": "🎨 绘画与材质技法"}]},
+  {"type": "bullet", "elements": [{"text": "2D 涂法", "bold": true}, {"text": "：平涂 / 厚涂 / 半厚涂 / 水彩 / 赛璐璐（如适用）"}]},
+  {"type": "bullet", "elements": [{"text": "3D 贴图技术", "bold": true}, {"text": "：手绘贴图 / PBR 材质流 / 法线贴图 / 顶点色 / 程序化纹理"}]},
+  {"type": "bullet", "elements": [{"text": "证据", "bold": true}, {"text": "：（描述具体观察，如\"墙面纹理可见笔触痕迹，判定为手绘贴图\"）"}]},
+  {"type": "image", "url": "https://...", "caption": "场景细节 — 墙面凹凸在换角度时变平，判定使用法线贴图而非真几何"},
+  {"type": "heading", "level": 3, "elements": [{"text": "✨ 后处理与特效"}]},
+  {"type": "bullet", "elements": [{"text": "后处理", "bold": true}, {"text": "：Bloom / Color Grading / Outline 描边 / SSAO / DOF / Volumetric Light"}]},
+  {"type": "bullet", "elements": [{"text": "证据", "bold": true}, {"text": "：（描述具体观察，如\"高光区域有柔和光晕扩散，使用了 Bloom\"）"}]},
+  {"type": "image", "url": "https://...", "caption": "室内场景 — 缝隙与转角处可见柔和暗影，SSAO 环境光遮蔽效果明显"},
+  {"type": "heading", "level": 3, "elements": [{"text": "📊 技法总结"}]},
+  {"type": "quote", "elements": [{"text": "一句话概括该游戏的核心技术组合，例如：\"NPR Cel Shading + 手绘贴图 + Bloom + Outline 描边，日式二次元卡通渲染标准管线\""}]}
+  ```
+  - 每个判断必须指向具体的视觉证据，不说空话
+  - 无法确认的技术用"疑似""可能"标注
+  - 技法分析板块的图片同样计入全局去重
+  - 如果游戏同时使用多种技术（如角色 PBR + 场景 NPR），明确标注混合使用
 
 - **heading 2: 资产链接** — bullet blocks with link elements
   ```json
@@ -469,6 +501,62 @@ ArtStation uses aggressive CDN hotlink protection (S3 AccessDenied 403). Direct 
   - 每个大章节开头用一行引用块 `<blockquote>` 做摘要导读
   - 长列表中每项用 `<strong>` 加粗关键标签，描述跟在后面
   - 避免大段连续纯文本，每 3-5 段插入一个图片或引用块打断视觉节奏
+
+## 美术技法知识框架（Art Technique Knowledge Base）
+
+分析游戏画面时，使用以下维度进行技法识别和描述。每款游戏可能同时使用多种技术的组合。
+
+### 渲染管线（Rendering Pipeline）
+
+| 类别 | 判断特征 | 代表作 |
+|------|----------|--------|
+| **PBR** (Physically Based Rendering) | 金属有真实反射、皮革有纹理、布料有纤维感、皮肤有次表面散射 | 战神、最后生还者、赛博朋克2077 |
+| **NPR** (Non-Photorealistic Rendering) | 非写实的风格化渲染，涵盖以下所有子类 | — |
+| → Cel/Toon Shading（卡通渲染） | 明暗硬分界线（色阶量化）、2-3 层明暗色块、轮廓线 | 塞尔达BotW、原神、崩坏星穹铁道 |
+| → 水彩/手绘风 | 边缘晕染渗透、纸张纹理叠加、色彩透明感 | 大白鹅模拟、Arknights 动画 |
+| → 油画/厚涂风 | 可见笔触、厚重肌理、色彩堆叠 | 暗黑3 场景、Oceanhorn |
+| → 像素风 (Pixel Art) | 低分辨率点阵、限制色板、可见像素网格 | Celeste、星露谷、Undertale |
+| → 扁平/矢量风 (Flat/Vector) | 纯色块无渐变、几何化形状、无描边或均匀描边 | Albion Online、Threes、纪念碑谷 |
+| → 线描/墨线风 | 强调轮廓线、类似版画/漫画墨稿 | Okami、无间之狱 |
+
+### 2D 绘画技法（2D Painting Techniques）
+
+| 技法 | 特征 | 常见场景 |
+|------|------|----------|
+| **平涂** (Anime/Flat) | 色块分明、明暗分界清晰无过渡、赛璐璐工业标准 | 日式二次元、手游立绘 |
+| **厚涂** (Impasto) | 色彩层层叠加、笔触可见、过渡柔和自然 | 欧美概念设计、写实角色 |
+| **半厚涂** (Semi-Impasto) | 平涂打底 + 边缘柔化、介于平涂与厚涂之间 | 高质量日系插画、主机游戏 2D 素材 |
+| **水彩风** | 湿边效果、颜色渗化、透明叠加 | 治愈系游戏、绘本风 |
+| **赛璐璐** (Celluloid) | 极简 2-3 层色阶、动画工业涂法 | 日式动画/游戏标准涂法 |
+
+### 3D 材质与贴图技术（3D Material & Texture Techniques）
+
+| 技术 | 视觉效果 | 判断特征 |
+|------|----------|----------|
+| **法线贴图** (Normal Map) | 低模表面有凹凸细节 | 换视角时凹凸感"扁平化"（视差错误） |
+| **视差贴图** (Parallax/Height Map) | 比 Normal Map 更有深度感 | 凹凸有真实深度偏移但仍有极限 |
+| **顶点色** (Vertex Color) | 多边形级别色块过渡 | 可做环境遮蔽、颜色变化、风场动画 |
+| **程序化纹理** (Procedural) | 无接缝、可无限平铺 | 纹理统一但无手工重复感 |
+| **手绘贴图** (Hand-painted) | 带笔触、风格化光影 | 魔兽世界、暗黑血统风格 |
+| **PBR 材质流** | Albedo+Normal+Metalness+Roughness+AO | 写实材质（金属反光、皮革、布料） |
+
+### 后处理与特效（Post-Processing & VFX）
+
+| 技术 | 视觉效果 | 判断特征 |
+|------|----------|----------|
+| **Bloom**（泛光） | 亮部边缘溢出光晕 | 高光区域有柔和扩散 |
+| **Color Grading**（调色） | 整体色调统一/风格化 | 画面有明确色调倾向 |
+| **Outline**（描边） | 物体边缘绘制线条 | 卡通风标配，粗细决定风格 |
+| **SSAO**（环境光遮蔽） | 缝隙/转角处加深阴影 | 写实风必备，增加层次感 |
+| **DOF**（景深） | 远/近处模糊 | 模拟相机镜头 |
+| **Volumetric Light**（体积光） | 光线穿过空气可见 | 丁达尔效应 / "耶稣光" |
+
+### 分析原则
+
+1. **从截图倒推**：不看源文件，仅从最终画面推断使用的技法组合
+2. **证据优先**：每个判断必须指向具体的视觉特征，不说空话
+3. **组合分析**：多数游戏混合使用多种技术（如 PBR 角色 + NPR 场景、手绘贴图 + 法线贴图）
+4. **标注不确定性**：无法确认的技术用"疑似""可能"标注，不强作定论
 
 ## Guidelines
 
