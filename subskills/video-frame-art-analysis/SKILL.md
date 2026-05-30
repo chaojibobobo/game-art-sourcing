@@ -22,10 +22,10 @@ Use this progress shape:
 ```text
 [1/7] 正在识别视频来源...
 [2/7] 正在获取视频元数据...
-[3/7] 正在抽取关键帧...
-[4/7] 正在筛选高价值画面...
-[5/7] 正在逐帧标注美术特征...
-[6/7] 正在生成视频风格 DNA 与新游戏建议...
+[3/7] 正在检查抽帧依赖...
+[4/7] 正在抽取关键帧...
+[5/7] 正在筛选高价值画面...
+[6/7] 正在逐帧标注并生成风格 DNA...
 [7/7] 正在生成/发布飞书报告...
 ```
 
@@ -65,13 +65,57 @@ Collect, when available:
 
 Prefer official platform metadata. For YouTube, oEmbed is acceptable for title/channel confirmation. For Bilibili, preserve BV id and page URL even if deeper metadata is blocked.
 
-### Step 3: Extract Frames
+### Step 3: Dependency Preflight
+
+Before frame extraction, check for the required local tools:
+
+```bash
+command -v yt-dlp >/dev/null 2>&1 || echo "MISSING: yt-dlp"
+command -v ffmpeg >/dev/null 2>&1 || echo "MISSING: ffmpeg"
+```
+
+Required roles:
+
+- `yt-dlp`: downloads or probes YouTube/Bilibili video streams.
+- `ffmpeg`: extracts timestamped frames and creates scan sheets.
+
+If either tool is missing:
+
+1. Do **not** silently claim full frame-by-frame analysis.
+2. Output a dependency block with exact install and verification commands:
+   ```bash
+   brew install yt-dlp ffmpeg
+   yt-dlp --version
+   ffmpeg -version
+   ```
+3. Stop before formal report generation unless the user explicitly asks for a thumbnail-only smoke test.
+4. If the user asks for a smoke test, use thumbnails/cover images only and mark every visual conclusion as `证据有限`.
+
+For restricted Bilibili or age/login-gated YouTube videos, first try public metadata. If download requires login state, use:
+
+```bash
+yt-dlp --cookies-from-browser chrome "VIDEO_URL"
+```
+
+Only use browser cookies when the user has approved access to their local browser profile.
+
+### Step 4: Extract Frames
 
 Prefer real frames over thumbnails. Use the best available method in the runtime:
 
-1. If video download/extraction tools are available, use `yt-dlp` plus `ffmpeg`.
-2. If download is blocked, use browser screenshots at timestamps or platform preview frames.
-3. If only thumbnail/cover is accessible, continue with limited evidence and state the limitation clearly.
+1. If `yt-dlp` and `ffmpeg` are available, download/probe the video and extract real frames.
+2. If download is blocked but browser playback is available, use browser screenshots at timestamps.
+3. If only thumbnail/cover is accessible, continue only as a smoke test with limited evidence and state the limitation clearly.
+
+Recommended extraction pattern:
+
+```bash
+mkdir -p /tmp/game-art-${SLUG}-frames
+yt-dlp -f "bv*[height<=1080]+ba/b[height<=1080]/b" -o "/tmp/game-art-${SLUG}.%(ext)s" "VIDEO_URL"
+ffmpeg -hide_banner -i "/tmp/game-art-${SLUG}.mp4" -vf "fps=1/6,scale=1280:-1" "/tmp/game-art-${SLUG}-frames/scan_%05d.jpg"
+```
+
+If the downloaded extension is not `.mp4`, use the actual output file path from `yt-dlp`.
 
 Sampling strategy:
 
@@ -86,7 +130,7 @@ Keep frame filenames timestamped:
 /tmp/game-art-${SLUG}-frames/000045.25_vfx-impact.jpg
 ```
 
-### Step 4: Select High-Value Frames
+### Step 5: Select High-Value Frames
 
 Reject:
 
@@ -108,7 +152,7 @@ Keep:
 
 Target 12-30 analyzed frames for a normal trailer, 30-60 for long gameplay videos.
 
-### Step 5: Frame Annotation Schema
+### Step 6: Frame Annotation Schema
 
 For each selected frame, record:
 
@@ -132,7 +176,7 @@ For each selected frame, record:
 
 Every technical claim needs visual evidence. Use "疑似/可能" when evidence is incomplete.
 
-### Step 6: Synthesize Style DNA
+### Step 7: Synthesize Style DNA
 
 Aggregate frame annotations into:
 
@@ -155,7 +199,7 @@ Then translate it into new-game guidance:
 - Production cost/risk
 - Small-team implementation route
 
-### Step 7: Feishu JSON Report
+### Step 8: Feishu JSON Report
 
 Generate the same JSON block schema used by the parent skill. Local frame paths are allowed in image blocks if the publish script supports local images.
 
