@@ -23,7 +23,7 @@ sys.path.insert(0, PROJECT_DIR)
 from feishu_client import FeishuClient  # noqa: E402
 from block_builder import json_to_blocks  # noqa: E402
 import requests  # noqa: E402
-from urllib.parse import urlparse  # noqa: E402
+from urllib.parse import urlparse, unquote  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("feishu-publish")
@@ -113,6 +113,23 @@ def _download(url: str, timeout: int = 15) -> requests.Response:
 
     log.warning("All ArtStation fallbacks failed for %s", url)
     return resp
+
+
+def _load_image_source(source: str, timeout: int = 15) -> bytes:
+    """Load image bytes from an HTTP(S) URL, file:// URL, or local path."""
+    parsed = urlparse(source)
+    if parsed.scheme in ("http", "https"):
+        resp = _download(source, timeout=timeout)
+        resp.raise_for_status()
+        return resp.content
+
+    if parsed.scheme == "file":
+        path = unquote(parsed.path)
+    else:
+        path = os.path.expanduser(source)
+
+    with open(path, "rb") as f:
+        return f.read()
 
 
 def _compress_image(data: bytes, max_width: int = 1200, quality: int = 85) -> tuple[bytes, int, int]:
@@ -231,15 +248,13 @@ def main():
         downloaded = 0
         with ThreadPoolExecutor(max_workers=6) as pool:
             futures = {
-                pool.submit(_download, url): idx
+                pool.submit(_load_image_source, url): idx
                 for idx, url in image_map.items()
             }
             for f in as_completed(futures):
                 idx = futures[f]
                 try:
-                    resp = f.result()
-                    resp.raise_for_status()
-                    raw = resp.content
+                    raw = f.result()
                     try:
                         compressed, w, h = _compress_image(raw)
                         img_data_map[idx] = compressed
